@@ -1,5 +1,7 @@
 package org.molgenis.compute.generators.impl;
 
+import static java.util.stream.Collectors.groupingBy;
+
 import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
@@ -8,7 +10,13 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
+import java.util.stream.Collectors;
 
+import org.molgenis.compute.data.model.DataEntity;
+import org.molgenis.compute.data.model.CollapsedEntities;
+import org.molgenis.compute.model.parameters.impl.GlobalParameterImpl;
+import org.molgenis.compute.model.parameters.impl.LocalParameterImpl;
 import org.molgenis.data.Entity;
 import org.molgenis.data.support.MapEntity;
 
@@ -29,69 +37,33 @@ public class TupleUtils
 	private HashMap<String, String> parametersToOverwrite = null;
 
 	/**
+	 * Collapses a list of {@link DataEntity} combinations into groups with same values for a set of step inputs.
 	 * 
 	 * @param parameters
-	 * @param targets
-	 * @return A list of {@link MapEntity}
+	 *            the {@link DataEntity} combinations to collapse
+	 * @param inputs
+	 *            the names of the parameters on whose values the combinations should be collapsed
+	 * @return the list of {@link CollapsedEntities} values
 	 */
-	public static List<MapEntity> collapse(List<MapEntity> parameters, List<String> targets)
+	public static List<CollapsedEntities> collapse(List<DataEntity> parameters, List<String> inputs)
 	{
-		Map<String, MapEntity> result = new LinkedHashMap<String, MapEntity>();
-		for (Entity parameter : parameters)
-		{
-			// generate key
-			String key = generateKeyFromTargets(targets, parameter);
-
-			// Create tuple if the key is not present, create lists for non-targets
-			if (result.get(key) == null)
-			{
-				MapEntity collapsedRow = new MapEntity();
-				for (String attribute : parameter.getAttributeNames())
-				{
-					if (targets.contains(attribute))
-					{
-						collapsedRow.set(attribute, parameter.get(attribute));
-					}
-					else
-					{
-						List<Object> list = new ArrayList<Object>();
-						list.add(parameter.get(attribute));
-						collapsedRow.set(attribute, list);
-					}
-				}
-				result.put(key, collapsedRow);
-			}
-			else
-			{
-				for (String attribute : parameter.getAttributeNames())
-				{
-					if (!targets.contains(attribute))
-					{
-						@SuppressWarnings("unchecked")
-						List<String> list = (List<String>) result.get(key).get(attribute);
-						list.add(parameter.getString(attribute));
-						result.get(key).set(attribute, list);
-					}
-				}
-			}
-		}
-
-		return new ArrayList<MapEntity>(result.values());
+		return parameters.stream().collect(groupingBy(p -> getInputValues(inputs, p))).entrySet().stream()
+				.map(e -> new LocalParameterImpl(e.getValue(), e.getKey(), inputs)).collect(Collectors.toList());
 	}
 
 	/**
 	 * Generates a key based on the values of the parameter map
 	 * 
-	 * @param targets
+	 * @param inputNames
 	 * @param parameter
 	 * @return The generated key
 	 */
-	private static String generateKeyFromTargets(List<String> targets, Entity parameter)
+	private static String getInputValues(List<String> inputNames, DataEntity parameter)
 	{
 		String key = "";
-		for (String target : targets)
+		for (String input : inputNames)
 		{
-			key += parameter.getString(target) + "_";
+			key += parameter.get(input) + "_";
 		}
 		return key;
 	}
@@ -102,23 +74,23 @@ public class TupleUtils
 	 * @throws IOException
 	 * @throws TemplateException
 	 */
-	public void solve(List<MapEntity> parameterValues) throws IOException
+	public void solve(List<DataEntity> list) throws IOException
 	{
 		// Freemarker configuration
 		@SuppressWarnings("deprecation")
 		Configuration freeMarkerConfiguration = new Configuration();
 		Template template;
 
-		replaceParameters(parameterValues);
+		replaceParameters(list);
 
 		// For every Parameter value
-		for (MapEntity parameterValue : parameterValues)
+		for (DataEntity parameterValue : list)
 		{
 			// For every attribute within this parameterValue map
 			for (String attribute : parameterValue.getAttributeNames())
 			{
 				// Store the original
-				String original = parameterValue.getString(attribute);
+				String original = parameterValue.get(attribute);
 
 				// If the original contains freemarker syntax
 				if (original.contains("${"))
@@ -144,7 +116,7 @@ public class TupleUtils
 					StringWriter writer = new StringWriter();
 					try
 					{
-						Map<String, Object> map = toMap(parameterValue);
+						Map<String, Object> map = parameterValue.toMap();
 
 						// ??
 						map.put("runid", runID);
@@ -172,9 +144,9 @@ public class TupleUtils
 	/**
 	 * Replaces parameters
 	 * 
-	 * @param map
+	 * @param list
 	 */
-	private void replaceParameters(List<MapEntity> map)
+	private void replaceParameters(List<DataEntity> list)
 	{
 		if (parametersToOverwrite != null)
 		{
@@ -182,7 +154,7 @@ public class TupleUtils
 			{
 				String key = entry.getKey();
 				String value = entry.getValue();
-				for (MapEntity tuple : map)
+				for (DataEntity tuple : list)
 				{
 					tuple.set(key, value);
 				}
@@ -209,38 +181,38 @@ public class TupleUtils
 	/**
 	 * Uncollapse a tuple using an idColumn
 	 * 
-	 * @param values
+	 * @param localParameters
 	 * @param idColumn
 	 * @return
 	 */
 	@SuppressWarnings("unchecked")
-	public static <E extends Entity> List<E> uncollapse(List<E> values, String idColumn)
+	public static List<DataEntity> uncollapse(List<CollapsedEntities> localParameters, String idColumn)
 	{
-		List<E> result = new ArrayList<E>();
+		List<DataEntity> result = new ArrayList<DataEntity>();
 
-		for (E original : values)
+		for (CollapsedEntities local : localParameters)
 		{
-			if (!(original.get(idColumn) instanceof List))
+			if (!(local.get(idColumn) instanceof List))
 			{
-				return values;
+				return localParameters;
 			}
 			else
 			{
-				for (int i = 0; i < original.getList(idColumn).size(); i++)
+				for (int i = 0; i < local.getList(idColumn).size(); i++)
 				{
-					MapEntity copy = new MapEntity();
-					for (String attribute : original.getAttributeNames())
+					DataEntity copy = new GlobalParameterImpl();
+					for (String attribute : local.getAttributeNames())
 					{
-						if (original.get(attribute) instanceof List)
+						if (local.get(attribute) instanceof List)
 						{
-							copy.set(attribute, original.getList(attribute).get(i));
+							copy.set(attribute, local.getList(attribute).get(i));
 						}
 						else
 						{
-							copy.set(attribute, original.get(attribute));
+							copy.set(attribute, local.getString(attribute));
 						}
 					}
-					result.add((E) copy);
+					result.add(copy);
 				}
 			}
 		}

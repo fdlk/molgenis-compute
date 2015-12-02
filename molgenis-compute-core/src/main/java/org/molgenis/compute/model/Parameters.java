@@ -1,10 +1,5 @@
 package org.molgenis.compute.model;
 
-import java.util.ArrayList;
-import java.util.List;
-
-import org.molgenis.data.support.MapEntity;
-
 /** Container for all parameters */
 public class Parameters
 {
@@ -135,26 +130,5 @@ public class Parameters
 
 	public static final String BATCH = "batch";
 	public static String ENVIRONMENT_FULLPATH = null; // to be set
-
-	// table with all the values
-	List<MapEntity> values = new ArrayList<MapEntity>();
-
-	public List<MapEntity> getValues()
-	{
-		return values;
-	}
-
-	public void setValues(List<MapEntity> values)
-	{
-		this.values = values;
-	}
-
-	public String toString()
-	{
-		String result = "";
-		for (MapEntity value : values)
-			result += value;
-		return result;
-	}
 
 }

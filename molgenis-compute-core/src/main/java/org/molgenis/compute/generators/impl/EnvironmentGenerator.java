@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.apache.log4j.Logger;
+import org.molgenis.compute.data.model.DataEntity;
 import org.molgenis.compute.model.Context;
 import org.molgenis.compute.model.Input;
 import org.molgenis.compute.model.Output;
@@ -19,7 +20,6 @@ import org.molgenis.compute.model.Parameters;
 import org.molgenis.compute.model.Step;
 import org.molgenis.compute.model.Task;
 import org.molgenis.compute.model.impl.WorkflowImpl;
-import org.molgenis.data.support.MapEntity;
 import org.molgenis.util.Pair;
 
 /**
@@ -89,15 +89,15 @@ public class EnvironmentGenerator
 		{
 			String userParameter = Parameters.USER_PREFIX + parameter;
 
-			for (MapEntity parameterValues : compute.getParameters().getValues())
+			for (DataEntity parameterValues : compute.getParameters().getValues())
 			{
 				// retrieve index and value for that index
 				Integer index = null;
 				String value = null;
 				for (String col : parameterValues.getAttributeNames())
 				{
-					if (col.equals(userParameter)) value = parameterValues.getString(col);
-					if (col.equals(Parameters.USER_PREFIX + Task.TASKID_COLUMN)) index = parameterValues.getInt(col);
+					if (col.equals(userParameter)) value = parameterValues.get(col);
+					if (col.equals(Parameters.USER_PREFIX + Task.TASKID_COLUMN)) index = Integer.parseInt(parameterValues.get(col), 10);
 				}
 
 				if (value == null)
@@ -141,7 +141,7 @@ public class EnvironmentGenerator
 		return relatedSteps;
 	}
 
-	private boolean isFoundAsOutput(String parameter, MapEntity wt)
+	private boolean isFoundAsOutput(String parameter, DataEntity parameterValues)
 	{
 		for (Step step : workflowImpl.getSteps())
 		{
@@ -156,7 +156,7 @@ public class EnvironmentGenerator
 
 					if (canBeKnown)
 					{
-						wt.set("user_" + parameter, step.getName() + "_" + parameter);
+						parameterValues.set("user_" + parameter, step.getName() + "_" + parameter);
 						return true;
 					}
 				}
@@ -169,7 +169,7 @@ public class EnvironmentGenerator
 
 					if (canBeKnown)
 					{
-						wt.set("user_" + parameter, step.getName() + Parameters.STEP_PARAM_SEP_SCRIPT + parameter);
+						parameterValues.set("user_" + parameter, step.getName() + Parameters.STEP_PARAM_SEP_SCRIPT + parameter);
 						return true;
 					}
 				}
